@@ -6,6 +6,7 @@ use serde::{Serialize, Deserialize};
 use rand::{thread_rng, RngCore, Rng};
 use rusqlite::{Connection, Result as SqliteResult, params};
 
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 enum Type {
@@ -93,7 +94,7 @@ fn main() -> SqliteResult<()> {
     Ok(())
 }
 
-fn handle_connection(mut stream: TcpStream, conn: Arc<Mutex<Connection>>) {
+fn handle_connection(mut stream: TcpStream, orders: Arc<Mutex<Connection>>) {
     let mut buffer = [0; 4096];
     
     match stream.read(&mut buffer) {
@@ -107,10 +108,11 @@ fn handle_connection(mut stream: TcpStream, conn: Arc<Mutex<Connection>>) {
                 let path = parts[1];
                 
                 let response = match (method, path) {
-                    ("GET", "/orders") => handle_get_orders(&conn),
-                    ("POST", "/order") => handle_post_order(&request, &conn),
+                    ("OPTIONS", _) => create_options_response(),
+                    ("GET", "/orders") => handle_get_orders(&orders),
+                    ("POST", "/order") => handle_post_order(&request, &orders),
                     ("DELETE", path) if path.starts_with("/order/") => 
-                        handle_delete_order(path, &conn),
+                        handle_delete_order(path, &orders),
                     _ => create_json_response(404, "Not Found", 
                         "{\"error\": \"Endpoint not found\"}"),
                 };
@@ -219,9 +221,23 @@ fn handle_delete_order(path: &str, conn: &Arc<Mutex<Connection>>) -> String {
     }
 }
 
+fn create_options_response() -> String {
+    "HTTP/1.1 204 No Content\r\n\
+     Access-Control-Allow-Origin: *\r\n\
+     Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\n\
+     Access-Control-Allow-Headers: Content-Type, Origin, Accept\r\n\
+     Access-Control-Max-Age: 86400\r\n\
+     Content-Length: 0\r\n\r\n".to_string()
+}
+
 fn create_json_response(status_code: u32, status_text: &str, body: &str) -> String {
     format!(
-        "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+        "HTTP/1.1 {} {}\r\n\
+         Content-Type: application/json\r\n\
+         Access-Control-Allow-Origin: *\r\n\
+         Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\n\
+         Access-Control-Allow-Headers: Content-Type, Origin, Accept\r\n\
+         Content-Length: {}\r\n\r\n{}",
         status_code,
         status_text,
         body.len(),
@@ -248,20 +264,20 @@ fn generate_fake_orders(conn: &Connection, count: u32) -> SqliteResult<()> {
         
         let (make_amount, take_amount) = match (make_denomination.clone(), take_denomination.clone()) {
             (Currency::Sat, Currency::Brl) => (
-                rng.gen_range(100_000.0..1_000_000.0),
-                rng.gen_range(100.0..1000.0)
+                rng.gen_range(1.0..100.0),
+                rng.gen_range(1.0..100.0)
             ),
             (Currency::Brl, Currency::Sat) => (
-                rng.gen_range(100.0..1000.0),
-                rng.gen_range(100_000.0..1_000_000.0)
+                rng.gen_range(1.0..100.0),
+                rng.gen_range(1.0..100.0)
             ),
             (Currency::Sat, Currency::Usd) => (
-                rng.gen_range(100_000.0..1_000_000.0),
-                rng.gen_range(10.0..100.0)
+                rng.gen_range(1.0..100.0),
+                rng.gen_range(1.0..100.0)
             ),
             _ => (
-                rng.gen_range(100.0..1000.0),
-                rng.gen_range(100.0..1000.0)
+                rng.gen_range(1.0..100.0),
+                rng.gen_range(1.0..100.0)
             ),
         };
 
