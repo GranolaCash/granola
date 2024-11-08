@@ -22,6 +22,7 @@ enum Currency {
     Usd,
     Eur,
     Chf,
+    Gbp,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -71,7 +72,7 @@ fn generate_id() -> String {
 fn main() -> SqliteResult<()> {
     let conn = init_db()?;
 
-    generate_fake_orders(&conn, 7)?;
+    generate_fake_orders(&conn, 1)?;
 
     let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
     println!("Server listening on port 8080");
@@ -252,7 +253,8 @@ fn generate_fake_orders(conn: &Connection, count: u32) -> SqliteResult<()> {
         Currency::Brl,
         Currency::Usd,
         Currency::Eur,
-        Currency::Chf
+        Currency::Chf,
+        Currency::Gbp
     ];
     
     let mut rng = thread_rng();

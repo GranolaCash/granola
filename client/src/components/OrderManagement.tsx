@@ -1,9 +1,74 @@
 'use client';
 import React, { useState, useEffect, useCallback } from 'react';
-import { CircleDollarSign, Lock, LinkIcon, Plus, AlertCircle } from 'lucide-react';
+import { Lock, LinkIcon, Plus, AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { api } from '@/lib/api';
 import { Order, OrderRequest, Currency, RelayStatus, DENOMINATIONS, Balances } from '@/types/types';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+const DEFAULT_RELAY = 'wss://orderbook.granola.cash';
+
+const formatNumber = (num: number, currency: Currency): string => {
+  const config: Record<Currency, { min: number; max: number }> = {
+    'sat': { min: 0, max: 0 },      // No decimals for sats
+    'brl': { min: 2, max: 2 },
+    'usd': { min: 2, max: 2 },
+    'eur': { min: 2, max: 2 },
+    'chf': { min: 2, max: 2 },
+    'gbp': { min: 2, max: 2 },
+  };
+
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: config[currency as Currency].min,
+    maximumFractionDigits: config[currency as Currency].max,
+  }).format(num);
+};
+
+const getCurrencyColor = (currency: Currency): string => {
+  switch (currency.toLowerCase()) {
+    case 'brl':
+      return 'bg-green-100';
+    case 'usd':
+      return 'bg-green-100';
+    case 'chf':
+      return 'bg-red-100';
+    case 'eur':
+      return 'bg-yellow-100';
+    case 'sat':
+      return 'bg-orange-100';
+    case 'gbp':
+      return 'bg-red-100';
+    default:
+      return 'bg-white/50';
+  }
+};
+
+const getCurrencySymbol = (currency: Currency): string => {
+  switch (currency.toLowerCase()) {
+    case 'brl':
+      return 'R$';
+    case 'usd':
+      return 'US$';
+    case 'chf':
+      return 'CHF';
+    case 'eur':
+      return '€';
+    case 'sat':
+      return '丰';
+    case 'gbp':
+      return '£';
+    default:
+      return '';
+  }
+};
+
 
 const formatBalance = (amount: number, currency: Currency) => {
   const formatter = new Intl.NumberFormat('en-US', {
@@ -296,57 +361,93 @@ const RelayStatusBadge = ({
   export default function OrderManagement() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [balances, setBalances] = useState<Balances>({
-      sat: 212121,
-      brl: 4242,
-      usd: 1031,
+      sat: 20090103,
+      brl: 2121,
+      usd: 4242,
       eur: 2140,
-      chf: 6102
+      chf: 6102,
+      gbp: 20081031
     });
     const [lockedBalances, setLockedBalances] = useState<Balances>({
       sat: 0,
       brl: 0,
       usd: 0,
       eur: 0,
-      chf: 0
+      chf: 0,
+      gbp: 0
     });
     const MIN_BALANCES: Balances = {
-      sat: 0,    // 1k sats
-      brl: 0,      // 10 BRL
-      usd: 0,      // 10 USD
-      eur: 0,      // 10 EUR
-      chf: 0       // 10 CHF
+      sat: 0,
+      brl: 0,
+      usd: 0,
+      eur: 0,
+      chf: 0,
+      gbp: 0
     };
+
     const [updatingBalances, setUpdatingBalances] = useState<Set<Currency>>(new Set());
     const [showAddRelay, setShowAddRelay] = useState(false);
     const [showCreateOrder, setShowCreateOrder] = useState(false);
-    const [relays, setRelays] = useState<string[]>([]);
-    const [relayStatuses, setRelayStatuses] = useState<Record<string, RelayStatus>>({});
-    const [relayConnections, setRelayConnections] = useState<Record<string, WebSocket>>({});
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     
-    
+    const [relayConnections, setRelayConnections] = useState<Record<string, WebSocket>>({});
+    const [relays, setRelays] = useState<string[]>([DEFAULT_RELAY]);
+    const [relayStatuses, setRelayStatuses] = useState<Record<string, RelayStatus>>({
+      [DEFAULT_RELAY]: 'connecting'
+    });
+    const [orderToTake, setOrderToTake] = useState<Order | null>(null);
 
+    const handleTakeOrderClick = (order: Order) => {
+      setOrderToTake(order);
+    };
+  
+    const handleConfirmTake = async () => {
+      if (!orderToTake) return;
+      
+      try {
+        await handleTakeOrder(orderToTake);
+        setOrderToTake(null);
+      } catch (error) {
+        console.error('Failed to take order:', error);
+      }
+    };
+  
     const connectToRelay = useCallback((relay: string) => {
+      console.log('Connecting to relay:', relay);  // Debug log
       setRelayStatuses(prev => ({ ...prev, [relay]: 'connecting' }));
   
       try {
         const ws = new WebSocket(relay);
-  
+        
         ws.onopen = () => {
+          console.log('Connected to relay:', relay);  // Debug log
           setRelayStatuses(prev => ({ ...prev, [relay]: 'connected' }));
+          // Add any subscription or initial messages here
         };
-  
+        
         ws.onclose = () => {
+          console.log('Disconnected from relay:', relay);  // Debug log
           setRelayStatuses(prev => ({ ...prev, [relay]: 'disconnected' }));
+          // Try to reconnect after 5 seconds
           setTimeout(() => {
-            setRelayStatuses(prev => ({ ...prev, [relay]: 'connecting' }));
             connectToRelay(relay);
           }, 5000);
         };
-  
-        ws.onerror = () => {
+        
+        ws.onerror = (error) => {
+          console.error('Relay error:', error);  // Debug log
           setRelayStatuses(prev => ({ ...prev, [relay]: 'disconnected' }));
+        };
+  
+        ws.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            console.log('Received message:', message);  // Debug log
+            // Handle different message types here
+          } catch (error) {
+            console.error('Error parsing message:', error);
+          }
         };
   
         setRelayConnections(prev => ({ ...prev, [relay]: ws }));
@@ -356,6 +457,24 @@ const RelayStatusBadge = ({
         setRelayStatuses(prev => ({ ...prev, [relay]: 'disconnected' }));
       }
     }, []);
+  
+    // Connect to relays when component mounts
+    useEffect(() => {
+      relays.forEach(relay => {
+        if (!relayConnections[relay]) {
+          connectToRelay(relay);
+        }
+      });
+  
+      // Cleanup on unmount
+      return () => {
+        Object.values(relayConnections).forEach(ws => {
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.close();
+          }
+        });
+      };
+    }, [relays, connectToRelay, relayConnections]);
   
     const addRelay = useCallback((newRelay: string) => {
       setRelays(prev => [...prev, newRelay]);
@@ -494,21 +613,39 @@ const RelayStatusBadge = ({
             </Alert>
           )}
     
-          {/* This is the balances section we're fixing */}
           <div className="mb-8">
             <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-              <CircleDollarSign className="w-6 h-6" />
-              Balances
+            🥣 Granola
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {(Object.entries(balances) as [Currency, number][]).map(([currency, amount]) => (
-                <BalanceCard
-                  key={currency}
-                  currency={currency}
-                  amount={amount}
-                  lockedAmount={lockedBalances[currency]}
-                  isUpdating={updatingBalances.has(currency)}
-                />
+                <div 
+                  key={currency} 
+                  className={`${getCurrencyColor(currency)} backdrop-blur-sm rounded-lg shadow p-4 border border-gray-200`}
+                >
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h3 className="text-lg font-semibold uppercase flex items-center gap-1">
+                        
+                        <span>{currency}</span>
+                      </h3>
+                      <p className="text-2xl text-gray-800">
+                        {getCurrencySymbol(currency)} {formatNumber(amount, currency)}
+                      </p>
+                    </div>
+                    {lockedBalances[currency] > 0 && (
+                      <div className="text-right">
+                        <div className="flex items-center text-gray-600 gap-1">
+                          <Lock className="w-4 h-4" />
+                          <span>Locked</span>
+                        </div>
+                        <p className="text-gray-600">
+                          {getCurrencySymbol(currency)}{formatNumber(lockedBalances[currency], currency)}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
@@ -518,7 +655,7 @@ const RelayStatusBadge = ({
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-bold flex items-center gap-2">
             <LinkIcon className="w-6 h-6" />
-            Relays
+            Nostr Relays
           </h2>
           <button
             onClick={() => setShowAddRelay(true)}
@@ -590,12 +727,57 @@ const RelayStatusBadge = ({
                     </td>
                     <td className="px-4 py-2">
                       <button
-                        onClick={() => handleTakeOrder(order)}
-                        className="text-blue-500 hover:text-blue-700 bg-blue"
+                        onClick={() => handleTakeOrderClick(order)}
+                        className="text-blue-400 hover:text-blue-300"
                       >
                         Take Order
                       </button>
                     </td>
+
+                     <Dialog open={orderToTake !== null} onOpenChange={() => setOrderToTake(null)}>
+                      <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                          <DialogTitle>Confirm Order</DialogTitle>
+                          <DialogDescription>
+                            Are you sure you want to take this order?
+                          </DialogDescription>
+                        </DialogHeader>
+                        {orderToTake && (
+                          <div className="py-4">
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="text-sm">
+                                <div className="font-semibold">Type</div>
+                                <div className={orderToTake.kind === 'buy' ? 'text-green-600' : 'text-red-600'}>
+                                  {orderToTake.kind.toUpperCase()}
+                                </div>
+                              </div>
+                              <div className="text-sm">
+                                <div className="font-semibold">Make</div>
+                                <div>{formatNumber(orderToTake.make_amount, orderToTake.make_denomination)} {orderToTake.make_denomination.toUpperCase()}</div>
+                              </div>
+                              <div className="text-sm">
+                                <div className="font-semibold">Take</div>
+                                <div>{formatNumber(orderToTake.take_amount, orderToTake.take_denomination)} {orderToTake.take_denomination.toUpperCase()}</div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        <DialogFooter className="sm:justify-end">
+                          <button
+                            onClick={() => setOrderToTake(null)}
+                            className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleConfirmTake}
+                            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                          >
+                            Confirm
+                          </button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
                   </tr>
                 ))}
               </tbody>

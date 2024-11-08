@@ -1,9 +1,9 @@
-export type Currency = 'sat' | 'brl' | 'usd' | 'eur' | 'chf';
+export type Currency = 'sat' | 'brl' | 'usd' | 'eur' | 'chf' | 'gbp';
 export type OrderType = 'buy' | 'sell';
 export type RelayStatus = 'connecting' | 'connected' | 'disconnected';
 export type Balances = Record<Currency, number>;
 
-export const DENOMINATIONS: Currency[] = ['sat', 'brl', 'usd', 'eur', 'chf'];
+export const DENOMINATIONS: Currency[] = ['sat', 'brl', 'usd', 'eur', 'chf', 'gbp'];
 
 export interface Order {
   id: string;
