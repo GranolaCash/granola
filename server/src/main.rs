@@ -74,8 +74,8 @@ fn main() -> SqliteResult<()> {
 
     generate_fake_orders(&conn, 1)?;
 
-    let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
-    println!("Server listening on port 8080");
+    let listener = TcpListener::bind("127.0.0.1:3337").unwrap();
+    println!("Server listening on port 3337");
     
     let conn = Arc::new(Mutex::new(conn));
     for stream in listener.incoming() {

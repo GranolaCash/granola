@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 'use client';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Lock, LinkIcon, Plus, AlertCircle } from 'lucide-react';
