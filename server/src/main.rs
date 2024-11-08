@@ -14,7 +14,7 @@ enum Type {
     Sell,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "lowercase")]
 enum Currency {
     Sat,
@@ -259,25 +259,34 @@ fn generate_fake_orders(conn: &Connection, count: u32) -> SqliteResult<()> {
     
     for _ in 0..count {
         let kind = types[rng.gen_range(0..types.len())].clone();
+        
+        // Get make_denomination first
         let make_denomination = currencies[rng.gen_range(0..currencies.len())].clone();
-        let take_denomination = currencies[rng.gen_range(0..currencies.len())].clone();
+        
+        // Get take_denomination, ensuring it's different from make_denomination
+        let take_denomination = loop {
+            let denom = currencies[rng.gen_range(0..currencies.len())].clone();
+            if denom != make_denomination {
+                break denom;
+            }
+        };
         
         let (make_amount, take_amount) = match (make_denomination.clone(), take_denomination.clone()) {
             (Currency::Sat, Currency::Brl) => (
-                rng.gen_range(1.0..100.0),
-                rng.gen_range(1.0..100.0)
+                (rng.gen_range(100_000.0..1_000_000.0) as f32 * 100.0).round() / 100.0,
+                (rng.gen_range(100.0..1000.0) as f32 * 100.0).round() / 100.0
             ),
             (Currency::Brl, Currency::Sat) => (
-                rng.gen_range(1.0..100.0),
-                rng.gen_range(1.0..100.0)
+                (rng.gen_range(100.0..1000.0) as f32 * 100.0).round() / 100.0,
+                (rng.gen_range(100_000.0..1_000_000.0) as f32 * 100.0).round() / 100.0
             ),
             (Currency::Sat, Currency::Usd) => (
-                rng.gen_range(1.0..100.0),
-                rng.gen_range(1.0..100.0)
+                (rng.gen_range(100_000.0..1_000_000.0) as f32 * 100.0).round() / 100.0,
+                (rng.gen_range(10.0..100.0) as f32 * 100.0).round() / 100.0
             ),
             _ => (
-                rng.gen_range(1.0..100.0),
-                rng.gen_range(1.0..100.0)
+                (rng.gen_range(10.0..1000.0) as f32 * 100.0).round() / 100.0,
+                (rng.gen_range(10.0..1000.0) as f32 * 100.0).round() / 100.0
             ),
         };
 
